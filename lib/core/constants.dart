@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 // Base URL
-const String kBaseUrl = 'http://192.168.1.7:8000';
+const String kBaseUrl = 'http://10.0.171.78:8000';
 
 // Brand Colors
 const Color kColorPrimary = Color(0xFF1B5E20); 
