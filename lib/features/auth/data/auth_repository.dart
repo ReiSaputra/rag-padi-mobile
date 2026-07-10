@@ -41,7 +41,11 @@ class AuthRepository {
   /// Semua parameter opsional: kirim hanya yang ingin diubah.
   /// Kalau mau ganti password, [currentPassword] wajib diisi dan harus
   /// cocok dengan password saat ini (divalidasi di backend).
-  Future<UserInfo> updateProfile({
+  ///
+  /// Return [ProfileUpdateResponse] yang membawa token BARU (non-null)
+  /// kalau password baru saja diganti — backend menaikkan token_version
+  /// saat itu sehingga token lama otomatis invalid.
+  Future<ProfileUpdateResponse> updateProfile({
     String? name,
     String? email,
     String? currentPassword,
@@ -54,6 +58,14 @@ class AuthRepository {
       if (newPassword != null) 'new_password': newPassword,
     };
     final res = await _dio.put('/auth/me', data: data);
-    return UserInfo.fromJson(res.data as Map<String, dynamic>);
+    return ProfileUpdateResponse.fromJson(res.data as Map<String, dynamic>);
+  }
+
+  /// POST /auth/logout-all — revoke semua token yang pernah diterbitkan
+  /// untuk user ini ("logout paksa" dari semua device/sesi). Setelah ini
+  /// berhasil, token yang dipakai memanggilnya pun ikut invalid — caller
+  /// WAJIB langsung clear token lokal & arahkan ke halaman login.
+  Future<void> logoutAllDevices() async {
+    await _dio.post('/auth/logout-all');
   }
 }

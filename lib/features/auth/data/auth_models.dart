@@ -41,3 +41,20 @@ class UserInfo {
     createdAt: json['created_at'] as String,
   );
 }
+
+/// Hasil PUT /auth/me. Membawa [token] baru HANYA kalau password baru saja
+/// diganti (backend menaikkan token_version saat itu, jadi token lama
+/// otomatis invalid — token baru ini menggantikannya supaya device sendiri
+/// tidak ikut ter-logout paksa oleh perubahan yang dia lakukan sendiri).
+class ProfileUpdateResponse {
+  final UserInfo user;
+  final String? token;
+
+  const ProfileUpdateResponse({required this.user, this.token});
+
+  factory ProfileUpdateResponse.fromJson(Map<String, dynamic> json) =>
+      ProfileUpdateResponse(
+        user: UserInfo.fromJson(json),
+        token: json['token'] as String?,
+      );
+}

@@ -3,13 +3,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants.dart';
+import '../../../core/api_error.dart';
 import '../providers/home_provider.dart';
+import '../data/home_models.dart';
 import '../../auth/providers/auth_provider.dart';
 import 'widgets/sensor_card.dart';
 import 'widgets/analysis_result.dart';
 import 'widgets/history_list.dart';
-import '../../chat/ui/chat_list_page.dart';
-import '../../auth/ui/profile_page.dart';
+import 'widgets/sensor_input_page.dart';
+import '../../../shared/widgets/app_bottom_nav.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -48,13 +50,43 @@ class HomePage extends ConsumerWidget {
     final authState = ref.watch(authProvider).value;
     final userName = authState?.name ?? 'Petani';
 
+    // User baru (belum pernah POST /sensor) akan selalu dapat 404 di sini —
+    // itu bukan error, jadi tombol Analisis sengaja dinonaktifkan sampai
+    // ada data, daripada membiarkan user menekannya dan dapat error lagi.
+    final hasSensor = sensorAsync.maybeWhen(
+      data: (_) => true,
+      orElse: () => false,
+    );
+
+    Future<void> _openSensorForm() async {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SensorInputPage()),
+      );
+      // sensorProvider & analyzeProvider sudah di-invalidate otomatis di
+      // dalam SensorInputNotifier.submit() saat sukses — tidak perlu
+      // invalidate manual lagi di sini.
+    }
+
     return Scaffold(
       backgroundColor: kColorScaffold,
       body: SafeArea(
         child: Column(
           children: [
             // ── App Bar ───────────────────────────────────────────────────
-            _AppBar(userName: userName),
+            _AppBar(
+              userName: userName,
+              // BUG FIX: sensorAsync.value RETHROW error kalau state-nya
+              // AsyncError (beda dari .valueOrNull yang aman) — sebelumnya
+              // ini bikin exception dari 500/404 kelempar di tempat yang
+              // salah (sebelum sempat ditangkap sensorAsync.when() di
+              // bawah), bikin seluruh HomePage crash walau sudah ada
+              // penanganan error yang rapi untuk kasus itu. maybeWhen di
+              // sini aman: null kalau bukan AsyncData (loading/error).
+              stationLabel: sensorSourceLabel(
+                sensorAsync.maybeWhen(data: (s) => s, orElse: () => null),
+              ),
+            ),
 
             // ── Body ──────────────────────────────────────────────────────
             Expanded(
@@ -94,7 +126,9 @@ class HomePage extends ConsumerWidget {
                       sensorAsync.when(
                         loading: () =>
                             const _SectionSkeleton(label: 'Data sensor'),
-                        error: (e, _) => _ErrorCard(message: e.toString()),
+                        error: (e, _) => isNotFoundError(e)
+                            ? _SensorEmptyState(onTap: _openSensorForm)
+                            : _ErrorCard(message: apiErrorMessage(e)),
                         data: (sensor) => Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -105,9 +139,29 @@ class HomePage extends ConsumerWidget {
                                   'Data sensor',
                                   style: kStyleSectionTitle,
                                 ),
-                                Text(
-                                  _formatTimeSensor(sensor.time),
-                                  style: kStyleMuted,
+                                Row(
+                                  children: [
+                                    Text(
+                                      _formatTimeSensor(sensor.time),
+                                      style: kStyleMuted,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    // Update manual — selalu tersedia, tidak
+                                    // cuma untuk empty state, supaya user
+                                    // bisa refresh reading kapan pun.
+                                    IconButton(
+                                      onPressed: _openSensorForm,
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        size: 18,
+                                        color: kColorPrimary,
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      tooltip: 'Input data sensor manual',
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -122,19 +176,34 @@ class HomePage extends ConsumerWidget {
                       // ── Tombol Analisis ───────────────────────────────
                       _AnalysisButton(
                         isLoading: analyzeAsync is AsyncLoading,
-                        onPressed: analyzeAsync is AsyncLoading
+                        onPressed: (analyzeAsync is AsyncLoading || !hasSensor)
                             ? null
                             : () =>
                                   ref.read(analyzeProvider.notifier).analyze(),
                       ),
+                      if (!hasSensor) ...[
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Input data sensor dulu untuk mulai analisis.',
+                          style: kStyleMuted,
+                        ),
+                      ],
 
                       const SizedBox(height: 20),
 
                       // ── Hasil Analisis ────────────────────────────────
                       analyzeAsync.when(
                         loading: () => const _AnalysisLoadingCard(),
-                        error: (e, _) =>
-                            _ErrorCard(message: 'Gagal menganalisis: $e'),
+                        error: (e, _) => isNotFoundError(e)
+                            // Sudah ditangani oleh empty state + tombol
+                            // Analisis yang dinonaktifkan di atas — tidak
+                            // perlu tampilkan error kedua untuk hal yang
+                            // sama.
+                            ? const SizedBox.shrink()
+                            : _ErrorCard(
+                                message:
+                                    'Gagal menganalisis: ${apiErrorMessage(e)}',
+                              ),
                         data: (result) {
                           if (result == null) return const SizedBox.shrink();
                           return Column(
@@ -161,7 +230,8 @@ class HomePage extends ConsumerWidget {
 
                       historyAsync.when(
                         loading: () => const _SectionSkeleton(label: ''),
-                        error: (e, _) => _ErrorCard(message: e.toString()),
+                        error: (e, _) =>
+                            _ErrorCard(message: apiErrorMessage(e)),
                         data: (items) => HistoryList(items: items),
                       ),
 
@@ -173,7 +243,7 @@ class HomePage extends ConsumerWidget {
             ),
 
             // ── Bottom Nav ────────────────────────────────────────────────
-            _BottomNav(current: 0, ref: ref),
+            const AppBottomNav(current: AppTab.beranda),
           ],
         ),
       ),
@@ -184,7 +254,8 @@ class HomePage extends ConsumerWidget {
 // ── App Bar ───────────────────────────────────────────────────────────────────
 class _AppBar extends StatelessWidget {
   final String userName;
-  const _AppBar({required this.userName});
+  final String stationLabel;
+  const _AppBar({required this.userName, required this.stationLabel});
 
   @override
   Widget build(BuildContext context) {
@@ -194,12 +265,12 @@ class _AppBar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Jenis Stasiun',
+            'Sumber Data',
             style: TextStyle(fontSize: 11, color: kColorTextMuted),
           ),
-          const Text(
-            'AWS-003',
-            style: TextStyle(
+          Text(
+            stationLabel,
+            style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
               color: kColorText,
@@ -351,6 +422,74 @@ class _SectionSkeleton extends StatelessWidget {
   }
 }
 
+// ── Empty state: belum ada data sensor ────────────────────────────────────────
+// Ditampilkan saat GET /sensor/latest (atau /analyze) balas 404 — ini
+// SENGAJA dibedakan dari _ErrorCard, karena bukan kegagalan sistem, cuma
+// user (biasanya baru daftar) belum pernah input data sensor untuk lahannya.
+class _SensorEmptyState extends StatelessWidget {
+  final VoidCallback onTap;
+  const _SensorEmptyState({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: kColorBgGreen,
+        borderRadius: BorderRadius.circular(kRadius),
+        border: Border.all(color: const Color(0xFFA5D6A7)),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.sensors_outlined, color: kColorPrimary, size: 32),
+          const SizedBox(height: 10),
+          const Text(
+            'Belum Ada Data Sensor',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: kColorText,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Input data sensor lahan kamu untuk mulai memakai TanyaPadi.',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: kColorTextMuted,
+              height: 1.4,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: ElevatedButton.icon(
+              onPressed: onTap,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text(
+                'Input Data Sensor',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kColorPrimaryMid,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(kRadius),
+                ),
+                elevation: 0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Error card ────────────────────────────────────────────────────────────────
 class _ErrorCard extends StatelessWidget {
   final String message;
@@ -375,115 +514,6 @@ class _ErrorCard extends StatelessWidget {
               style: const TextStyle(color: kColorDanger, fontSize: 13),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Bottom Navigation ─────────────────────────────────────────────────────────
-class _BottomNav extends StatelessWidget {
-  final int current;
-  final WidgetRef ref;
-  const _BottomNav({required this.current, required this.ref});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: kColorSurface,
-        border: Border(top: BorderSide(color: kColorDivider)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _NavItem(
-                icon: Icons.home_outlined,
-                activeIcon: Icons.home_rounded,
-                label: 'Beranda',
-                isActive: current == 0,
-                onTap: () {},
-              ),
-              _NavItem(
-                icon: Icons.chat_bubble_outline_rounded,
-                activeIcon: Icons.chat_bubble_rounded,
-                label: 'Chat',
-                isActive: current == 1,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ChatListPage()),
-                ),
-              ),
-              _NavItem(
-                icon: Icons.person_outline_rounded,
-                activeIcon: Icons.person_rounded,
-                label: 'Profil',
-                isActive: current == 2,
-                // BUG-009 (fixed): sebelumnya tab ini langsung memicu dialog
-                // logout tanpa ada halaman profil sama sekali. Sekarang
-                // navigasi ke ProfilePage — logout dipindah jadi tombol di
-                // dalam halaman itu.
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ProfilePage()),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-  final bool isActive;
-  final VoidCallback? onTap;
-
-  const _NavItem({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
-    required this.isActive,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isActive ? kColorPrimary : kColorTextMuted;
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(isActive ? activeIcon : icon, color: color, size: 24),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: color,
-              fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-            ),
-          ),
-          if (isActive) ...[
-            const SizedBox(height: 4),
-            Container(
-              width: 20,
-              height: 3,
-              decoration: BoxDecoration(
-                color: kColorPrimary,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ],
         ],
       ),
     );

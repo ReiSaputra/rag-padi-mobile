@@ -6,6 +6,7 @@ import '../../../core/constants.dart';
 import '../../home/providers/home_provider.dart';
 import '../../home/data/home_models.dart';
 import '../providers/chat_provider.dart';
+import '../../../shared/widgets/app_bottom_nav.dart';
 import 'chat_detail_page.dart';
 import 'widgets/new_chat_dialog.dart';
 
@@ -106,6 +107,17 @@ class ChatListPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final historyAsync = ref.watch(historyProvider);
+    // watch (bukan read) supaya label ini otomatis ikut update begitu
+    // sensorProvider di-invalidate (mis. setelah user input data sensor
+    // manual di HomePage) — konsisten dengan label yang sama di sana.
+    final sensorAsync = ref.watch(sensorProvider);
+    // BUG FIX: sensorAsync.value RETHROW error kalau state-nya AsyncError
+    // (bukan return null seperti .valueOrNull) — pakai maybeWhen supaya
+    // aman dan tidak ikut mem-forward error /sensor/latest ke sini, yang
+    // memang tidak relevan ditampilkan di halaman daftar chat ini.
+    final stationLabel = sensorSourceLabel(
+      sensorAsync.maybeWhen(data: (s) => s, orElse: () => null),
+    );
 
     return Scaffold(
       backgroundColor: kColorScaffold,
@@ -115,18 +127,18 @@ class ChatListPage extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Header ────────────────────────────────────────────────────
-            const Padding(
-              padding: EdgeInsets.fromLTRB(kPadPage, 12, kPadPage, 0),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(kPadPage, 12, kPadPage, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Jenis Stasiun',
+                  const Text(
+                    'Sumber Data',
                     style: TextStyle(fontSize: 11, color: kColorTextMuted),
                   ),
                   Text(
-                    'AWS-003',
-                    style: TextStyle(
+                    stationLabel,
+                    style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                       color: kColorText,
@@ -212,7 +224,7 @@ class ChatListPage extends ConsumerWidget {
       // tingginya — akibatnya FAB menabrak/menutupi item "Profil".
       // Sekarang _BottomNav dipindah ke slot resmi bottomNavigationBar,
       // supaya Scaffold otomatis menggeser FAB ke atas nav bar ini.
-      bottomNavigationBar: const _BottomNav(current: 1),
+      bottomNavigationBar: const AppBottomNav(current: AppTab.chat),
 
       // ── FAB: Chat mandiri baru ────────────────────────────────────────────
       floatingActionButton: FloatingActionButton(
@@ -333,104 +345,6 @@ class _ChatCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ── Bottom Nav (reusable) ─────────────────────────────────────────────────────
-class _BottomNav extends StatelessWidget {
-  final int current;
-  const _BottomNav({required this.current});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: kColorSurface,
-        border: Border(top: BorderSide(color: kColorDivider)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _NavItem(
-                icon: Icons.home_outlined,
-                activeIcon: Icons.home_rounded,
-                label: 'Beranda',
-                isActive: current == 0,
-                onTap: () => Navigator.pop(context),
-              ),
-              _NavItem(
-                icon: Icons.chat_bubble_outline_rounded,
-                activeIcon: Icons.chat_bubble_rounded,
-                label: 'Chat',
-                isActive: current == 1,
-                onTap: () {},
-              ),
-              _NavItem(
-                icon: Icons.person_outline_rounded,
-                activeIcon: Icons.person_rounded,
-                label: 'Profil',
-                isActive: current == 2,
-                onTap: () {},
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _NavItem({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isActive ? kColorPrimary : kColorTextMuted;
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(isActive ? activeIcon : icon, color: color, size: 24),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: color,
-              fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-            ),
-          ),
-          if (isActive) ...[
-            const SizedBox(height: 4),
-            Container(
-              width: 20,
-              height: 3,
-              decoration: BoxDecoration(
-                color: kColorPrimary,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ],
-        ],
       ),
     );
   }

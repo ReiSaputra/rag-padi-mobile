@@ -10,6 +10,14 @@ class HomeRepository {
     return SensorData.fromJson(res.data as Map<String, dynamic>);
   }
 
+  /// POST /sensor — input data sensor manual (lahan milik user yang login).
+  /// Bisa lempar DioException 400 (rentang nilai/waktu tidak valid) atau
+  /// 429 (rate limit) — ditangani di UI lewat apiErrorMessage().
+  Future<SensorData> inputSensor(SensorInputRequest input) async {
+    final res = await _dio.post('/sensor', data: input.toJson());
+    return SensorData.fromJson(res.data as Map<String, dynamic>);
+  }
+
   /// POST /analyze
   Future<AnalyzeResult> analyze() async {
     final res = await _dio.post('/analyze');

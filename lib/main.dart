@@ -128,9 +128,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/constants.dart';
+import 'core/api_client.dart';
+import 'core/navigation.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/ui/login_page.dart';
+import 'features/auth/ui/profile_page.dart';
 import 'features/home/ui/home_page.dart';
+import 'features/chat/ui/chat_list_page.dart';
 
 void main() {
   runApp(const ProviderScope(child: TanyaPadiApp()));
@@ -144,6 +148,14 @@ class TanyaPadiApp extends StatelessWidget {
     return MaterialApp(
       title: 'TanyaPadi',
       debugShowCheckedModeBanner: false,
+      // FIX: dipasang supaya popToRoot() di lib/core/navigation.dart bisa
+      // mengosongkan stack navigasi dari luar widget tree — dipanggil
+      // dari AuthNotifier.logout() di auth_provider.dart setiap kali
+      // logout terjadi (manual maupun otomatis lewat 401). Tanpa ini,
+      // logout dari halaman yang ditumpuk (ProfilePage, dst) hanya
+      // mengganti state auth tanpa menutup halaman itu, jadi user masih
+      // melihat halaman lama sampai menekan back manual.
+      navigatorKey: navigatorKey,
       theme: ThemeData(
         colorSchemeSeed: kColorPrimary,
         useMaterial3: true,
@@ -151,16 +163,43 @@ class TanyaPadiApp extends StatelessWidget {
         fontFamily: 'Roboto',
       ),
       home: const _AuthGate(),
+      // Didaftarkan supaya AppBottomNav (lib/shared/widgets/
+      // app_bottom_nav.dart) bisa navigasi antar tab lewat nama rute
+      // (pushNamed), tanpa perlu meng-import ChatListPage/ProfilePage
+      // langsung — itu akan bikin circular import karena kedua halaman
+      // itu sendiri meng-import AppBottomNav.
+      routes: {
+        '/chat': (context) => const ChatListPage(),
+        '/profile': (context) => const ProfilePage(),
+      },
     );
   }
 }
 
 /// AuthGate — menentukan halaman awal berdasarkan status login
-class _AuthGate extends ConsumerWidget {
+class _AuthGate extends ConsumerStatefulWidget {
   const _AuthGate();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends ConsumerState<_AuthGate> {
+  @override
+  void initState() {
+    super.initState();
+    // BUG-015 fix: begitu ada request MANAPUN yang ditolak backend dengan
+    // 401 (token expired, JWT_SECRET diganti seperti BUG-012, atau user
+    // memanggil /auth/logout-all dari device lain), otomatis logout +
+    // redirect ke Login — bukan diam menampilkan Beranda yang rusak
+    // dengan provider yang semuanya gagal fetch.
+    ApiClient.instance.onUnauthorized = () {
+      ref.read(authProvider.notifier).logout();
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final authAsync = ref.watch(authProvider);
 
     return authAsync.when(

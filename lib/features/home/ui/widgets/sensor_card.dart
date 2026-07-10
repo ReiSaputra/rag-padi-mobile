@@ -66,15 +66,27 @@ SensorStatus wrfStatus(double v) {
 }
 // Tidak berubah — breakpoint (2, 5) sudah cocok dengan rag.py.
 
+// PERBAIKAN (menyusul revisi rag.py): skema lama di sini (150-250 "bagus",
+// 50-300 "netral", di luar itu "kritis" dengan narasi "rentan hama/blast")
+// meniru skema mg/kg lama di rag.py yang TERNYATA tidak berdasar sumber
+// akademik manapun (bukan Pujiharti et al. 2008, bukan manual resmi PUTS —
+// PUTS menetapkan status N secara kualitatif dari bagan warna, bukan ambang
+// mg/kg). rag.py sudah direvisi memakai proksi 2 breakpoint (50, 150) yang
+// dipetakan ke status Rendah/Sedang/Tinggi resmi PUTS + tabel dosis Urea
+// (asumsi default tekstur tanah "Berliat"). Breakpoint di bawah ini
+// disamakan dengan rag.py yang baru — lihat parse_sensor() di rag.py dan
+// Dokumen 3 (knowledge base) untuk rincian lengkap.
+//
+// Catatan pemetaan warna: status "Rendah" (dosis Urea tertinggi, 250 kg/ha,
+// 2x aplikasi) ditandai kritis karena butuh tindakan pemupukan segera;
+// "Tinggi" ditandai bagus karena tanah sudah cukup N (dosis Urea minimal).
+// Ini BUKAN klaim "N tinggi = sehat" secara agronomis mutlak — hanya
+// merefleksikan kebutuhan tindakan pemupukan sesuai tabel PUTS.
 SensorStatus snStatus(double v) {
-  if (v >= 150 && v <= 250) return SensorStatus.bagus; // optimal
-  if (v >= 50 && v <= 300)
-    return SensorStatus.netral; // cukup awal / zona transisi
-  return SensorStatus
-      .kritis; // <50 defisiensi ATAU >300 kelebihan (rentan hama/blast)
+  if (v > 150) return SensorStatus.bagus; // Status N Tinggi → Urea 200 kg/ha
+  if (v >= 50) return SensorStatus.netral; // Status N Sedang → Urea 200 kg/ha
+  return SensorStatus.kritis; // Status N Rendah → Urea 250 kg/ha (2x aplikasi)
 }
-// BUG LAMA: v >= 50 tanpa batas atas ikut menangkap N berlebih (>300)
-// dan menandainya "netral", padahal rag.py bilang itu rentan hama & blast.
 
 SensorStatus spStatus(double v) {
   if (v >= 87 && v <= 174)

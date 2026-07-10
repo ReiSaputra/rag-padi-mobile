@@ -15,6 +15,11 @@ class SensorData {
   final double? st;
   final double? sc;
   final String time;
+  // 'iot' (dari perangkat AWS-003) atau 'manual' (diinput lewat form ini).
+  // Backend selalu mengirim field ini (default 'iot' untuk data lama),
+  // tapi tetap dibuat nullable-safe di sini kalau suatu saat ada endpoint
+  // lama yang belum kirim field ini.
+  final String source;
 
   const SensorData({
     required this.id,
@@ -30,6 +35,7 @@ class SensorData {
     this.st,
     this.sc,
     required this.time,
+    this.source = 'iot',
   });
 
   factory SensorData.fromJson(Map<String, dynamic> json) => SensorData(
@@ -46,7 +52,62 @@ class SensorData {
     st: (json['st'] as num?)?.toDouble(),
     sc: (json['sc'] as num?)?.toDouble(),
     time: json['time'] as String,
+    source: json['source'] as String? ?? 'iot',
   );
+}
+
+/// Payload untuk POST /sensor (input manual). Field opsional (whm, wws,
+/// st, sc) sengaja di-drop dari JSON kalau null — bukan dikirim null —
+/// supaya konsisten dengan pola optional field di [AuthRepository.
+/// updateProfile] dan tidak memicu validasi Pydantic yang tidak perlu.
+class SensorInputRequest {
+  final double sm;
+  final double sph;
+  final double sn;
+  final double sp;
+  final double sk;
+  final double wtp;
+  final double wrf;
+  final double? whm;
+  final double? wws;
+  final double? st;
+  final double? sc;
+
+  const SensorInputRequest({
+    required this.sm,
+    required this.sph,
+    required this.sn,
+    required this.sp,
+    required this.sk,
+    required this.wtp,
+    required this.wrf,
+    this.whm,
+    this.wws,
+    this.st,
+    this.sc,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'sm': sm,
+    'sph': sph,
+    'sn': sn,
+    'sp': sp,
+    'sk': sk,
+    'wtp': wtp,
+    'wrf': wrf,
+    if (whm != null) 'whm': whm,
+    if (wws != null) 'wws': wws,
+    if (st != null) 'st': st,
+    if (sc != null) 'sc': sc,
+  };
+}
+
+/// Label sumber data untuk ditampilkan di UI (dipakai di HomePage &
+/// ChatListPage supaya "AWS-003" tidak lagi hardcode — sekarang tiap user
+/// punya lahan sendiri, datanya bisa dari IoT ATAU input manual).
+String sensorSourceLabel(SensorData? sensor) {
+  if (sensor == null) return 'Belum ada data';
+  return sensor.source == 'manual' ? 'Input Manual' : 'AWS-003';
 }
 
 // ── Analyze Result ────────────────────────────────────────────────────────────

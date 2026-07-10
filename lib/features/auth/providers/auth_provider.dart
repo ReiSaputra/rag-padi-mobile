@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../data/auth_models.dart';
 import '../data/auth_repository.dart';
 import '../../../core/api_client.dart';
+import '../../../core/navigation.dart';
 import '../../home/providers/home_provider.dart';
 import '../../chat/providers/chat_provider.dart';
 
@@ -147,6 +148,17 @@ class AuthNotifier extends StateNotifier<AsyncValue<AuthState>> {
     ApiClient.instance.clearToken();
     _clearUserScopedProviders();
     state = const AsyncValue.data(AuthState.initial());
+    // BUG FIX: sebelumnya hanya state auth yang diganti — kalau logout
+    // terjadi saat user sedang di halaman yang ditumpuk di atas root
+    // (ProfilePage, ChatDetailPage, dst), _AuthGate di dasar stack memang
+    // sudah berganti ke LoginPage, tapi tertutup halaman yang masih
+    // ditumpuk di atasnya sehingga user tidak langsung melihatnya (harus
+    // menekan back manual dulu). popToRoot() mengosongkan stack navigasi
+    // kembali ke root supaya LoginPage benar-benar terlihat. Ditaruh di
+    // sini (bukan di tiap tombol logout) supaya otomatis berlaku juga
+    // untuk logout otomatis lewat ApiClient.onUnauthorized (401) dan
+    // logoutAllDevices() di bawah, yang keduanya memanggil logout() ini.
+    popToRoot();
   }
 
   /// Update nama/email/password user yang sedang login.
@@ -158,22 +170,44 @@ class AuthNotifier extends StateNotifier<AsyncValue<AuthState>> {
     String? currentPassword,
     String? newPassword,
   }) async {
-    final updated = await _repo.updateProfile(
+    final result = await _repo.updateProfile(
       name: name,
       email: email,
       currentPassword: currentPassword,
       newPassword: newPassword,
     );
 
-    await _storage.write(key: _kName, value: updated.name);
-    await _storage.write(key: _kEmail, value: updated.email);
+    await _storage.write(key: _kName, value: result.user.name);
+    await _storage.write(key: _kEmail, value: result.user.email);
+
+    // Kalau password baru saja diganti, backend mengirim token BARU
+    // (token lama otomatis invalid karena token_version naik). Simpan &
+    // pakai token baru ini supaya device sendiri tidak ikut ter-logout
+    // paksa oleh perubahan yang dia lakukan sendiri.
+    if (result.token != null) {
+      await _storage.write(key: _kToken, value: result.token!);
+      ApiClient.instance.setToken(result.token!);
+    }
 
     final current = state.value;
     if (current != null) {
       state = AsyncValue.data(
-        current.copyWith(name: updated.name, email: updated.email),
+        current.copyWith(
+          name: result.user.name,
+          email: result.user.email,
+          token: result.token ?? current.token,
+        ),
       );
     }
+  }
+
+  /// Revoke semua token yang pernah diterbitkan untuk user ini ("logout
+  /// paksa" dari semua device/sesi lain, misal kalau curiga akun diakses
+  /// pihak lain). Token yang sedang dipakai device ini pun ikut invalid,
+  /// jadi setelah sukses langsung diperlakukan sama seperti logout biasa.
+  Future<void> logoutAllDevices() async {
+    await _repo.logoutAllDevices();
+    await logout();
   }
 }
 

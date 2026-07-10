@@ -8,6 +8,18 @@ class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
 
+  // BUG-015 fix: sebelumnya kalau token JWT ditolak backend (401) — entah
+  // karena expired, JWT_SECRET diganti (lihat BUG-012), atau user memanggil
+  // /auth/logout-all dari device lain — app tetap "diam" menampilkan
+  // Beranda yang rusak (setiap provider gagal fetch dengan error 401 yang
+  // membingungkan), tanpa pernah mengarahkan user kembali ke halaman Login.
+  //
+  // onUnauthorized diisi oleh main.dart saat startup (biasanya memanggil
+  // authProvider.notifier.logout()). Dipanggil otomatis oleh interceptor di
+  // bawah setiap kali ADA request yang ditolak dengan status 401, dari
+  // endpoint mana pun.
+  void Function()? onUnauthorized;
+
   late final Dio _dio =
       Dio(
           BaseOptions(
@@ -18,6 +30,18 @@ class ApiClient {
           ),
         )
         ..interceptors.addAll([
+          InterceptorsWrapper(
+            onError: (error, handler) {
+              if (error.response?.statusCode == 401) {
+                onUnauthorized?.call();
+              }
+              // Tetap teruskan error apa adanya — kode yang sudah ada (try/catch
+              // di halaman-halaman) tidak perlu diubah, tetap dapat exception
+              // untuk ditangani lokal (misal tampilkan snackbar) SEKALIGUS
+              // logout otomatis terjadi di background.
+              handler.next(error);
+            },
+          ),
           // SECURITY FIX: sebelumnya LogInterceptor aktif tanpa syarat, dengan
           // requestHeader default true — artinya header "Authorization: Bearer
           // <token>" ikut ter-print ke console/logcat di SETIAP request, di

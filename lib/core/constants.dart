@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 // Base URL
-const String kBaseUrl = 'http://10.0.171.78:8000';
+const String kBaseUrl = 'https://tanyapadii.petanitech.com';
 
 // Brand Colors
 const Color kColorPrimary = Color(0xFF1B5E20); 

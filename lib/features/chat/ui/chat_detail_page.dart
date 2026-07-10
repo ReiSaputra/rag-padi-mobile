@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants.dart';
 import '../data/chat_models.dart';
 import '../providers/chat_provider.dart';
+import '../../../shared/widgets/app_bottom_nav.dart';
 
 class ChatDetailPage extends ConsumerStatefulWidget {
   final String sessionId;
@@ -146,7 +147,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
             ),
 
             // ── Bottom nav ────────────────────────────────────────────────
-            _BottomNav(),
+            const AppBottomNav(current: AppTab.chat),
           ],
         ),
       ),
@@ -372,99 +373,6 @@ class _InputBar extends StatelessWidget {
                     ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Bottom Nav ────────────────────────────────────────────────────────────────
-class _BottomNav extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: kColorSurface,
-        border: Border(top: BorderSide(color: kColorDivider)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _NavItem(
-                icon: Icons.home_outlined,
-                label: 'Beranda',
-                isActive: false,
-                onTap: () {
-                  // Kembali ke root (home)
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                },
-              ),
-              _NavItem(
-                icon: Icons.chat_bubble_rounded,
-                label: 'Chat',
-                isActive: true,
-                onTap: () => Navigator.pop(context),
-              ),
-              _NavItem(
-                icon: Icons.person_outline_rounded,
-                label: 'Profil',
-                isActive: false,
-                onTap: () {},
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isActive ? kColorPrimary : kColorTextMuted;
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: color,
-              fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-            ),
-          ),
-          if (isActive) ...[
-            const SizedBox(height: 4),
-            Container(
-              width: 20,
-              height: 3,
-              decoration: BoxDecoration(
-                color: kColorPrimary,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ],
         ],
       ),
     );
